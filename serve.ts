@@ -4,14 +4,10 @@
  * @see https://github.com/oakserver/oak/blob/main/examples/staticServer.ts
  */
 
-/** oak/mod.ts */
-import { Application, Router, Context } from './deps.ts';
-/** oak/mod.ts */
-import type { RouteParams } from './deps.ts';
-/** path/posix.ts */
-import { extname } from './deps.ts';
-/** fmt/colors.ts */
-import { bold, yellow } from './deps.ts';
+import { Application, Router, Context } from 'oak/mod.ts';
+import type { RouteParams } from 'oak/mod.ts';
+import { bold, yellow } from 'fmt/colors.ts';
+import { extname } from 'path/posix.ts';
 
 /** Based on file_server.ts */
 const MEDIA_TYPES: Record<string, string> = {
