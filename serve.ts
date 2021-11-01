@@ -1,83 +1,78 @@
-import { Router, Context, Application, RouteParams, extname } from './deps.ts';
-
-/** Based on file_server.ts */
-const MEDIA_TYPES: Record<string, string> = {
-  '.md': 'text/markdown',
-  '.html': 'text/html',
-  '.htm': 'text/html',
-  '.json': 'application/json',
-  '.map': 'application/json',
-  '.txt': 'text/plain',
-  '.ts': 'text/typescript',
-  '.tsx': 'text/tsx',
-  '.js': 'application/javascript',
-  '.jsx': 'text/jsx',
-  '.gz': 'application/gzip',
-  '.css': 'text/css',
-  '.wasm': 'application/wasm',
-  '.mjs': 'application/javascript',
-  '.svg': 'image/svg+xml',
-  '.png': 'image/png',
-  '.bmp': 'image/bmp',
-  '.jpg': 'image/jpg',
-  '.webp': 'image/webp',
-  '.woff': 'font/woff',
-  '.woff2': 'font/woff2'
-};
-
-/** Returns the content-type based on the extension of a path. */
-function contentType(path: string): string | undefined {
-  return MEDIA_TYPES[extname(path)];
-}
-
-/**
- * Serve all files from directory (without slash at end) recursively
- * @example serveFilesFrom('./public')
- * @param directory Pathname without slash (/) as end
+/*
+ * This is an example of a server that will serve static content out of the
+ * $CWD/examples/static path.
+ * @see https://github.com/oakserver/oak/blob/main/examples/staticServer.ts
  */
-async function serveFilesFrom(
-  router: Router<RouteParams, Record<string, string>>,
-  directory: string,
-  original = directory
-) {
-  for await (const dirEntry of Deno.readDir(directory)) {
-    if (dirEntry.isDirectory) {
-      // recursively add filepath to route
-      serveFilesFrom(router, directory + '/' + dirEntry.name, original);
-    } else {
-      // add filepath to route
-      const urlpath =
-        '/' +
-        (directory + '/').replace(original + '/', '') +
-        (dirEntry.name === 'index.html' ? '' : dirEntry.name);
-      router.get(urlpath, async (context: Context) => {
-        const filepath = directory + '/' + dirEntry.name;
 
-        const type = contentType(filepath);
-        context.response.type = type;
+import { Application, HttpError, Status, bold, cyan, green, red, yellow } from './deps.ts';
 
-        // move file open inside of closure to
-        // control lifetime of file handler
-        const file = type?.startsWith('image')
-          ? await Deno.open(filepath) // open image alternatively since binary
-          : await Deno.readTextFile(filepath);
-        context.response.body = file;
-      });
+const app = new Application();
+
+// Error handler middleware
+app.use(async (context, next) => {
+  try {
+    await next();
+  } catch (e) {
+    if (e instanceof HttpError) {
+      // deno-lint-ignore no-explicit-any
+      context.response.status = e.status as any;
+      if (e.expose) {
+        context.response.body = `<!DOCTYPE html>
+            <html>
+              <body>
+                <h1>${e.status} - ${e.message}</h1>
+              </body>
+            </html>`;
+      } else {
+        context.response.body = `<!DOCTYPE html>
+            <html>
+              <body>
+                <h1>${e.status} - ${Status[e.status]}</h1>
+              </body>
+            </html>`;
+      }
+    } else if (e instanceof Error) {
+      context.response.status = 500;
+      context.response.body = `<!DOCTYPE html>
+            <html>
+              <body>
+                <h1>500 - Internal Server Error</h1>
+              </body>
+            </html>`;
+      console.log('Unhandled Error:', red(bold(e.message)));
+      console.log(e.stack);
     }
   }
-}
+});
 
-const router = new Router();
-serveFilesFrom(router, 'build');
-// const body = await Deno.readTextFile('build/_app/chunks/vendor-836cc791.js');
-// router.get('/_app/chunks/vendor-836cc791.js', (context: Context) => {
-//   context.response.type = 'text/javascript';
-//   context.response.body = body;
-// });
-const app = new Application();
-app.use(router.routes());
-app.use(router.allowedMethods());
+// Logger
+app.use(async (context, next) => {
+  await next();
+  const rt = context.response.headers.get('X-Response-Time');
+  console.log(
+    `${green(context.request.method)} ${cyan(context.request.url.pathname)} - ${bold(String(rt))}`
+  );
+});
 
-console.log('Listening on http://localhost:8000');
+// Response Time
+app.use(async (context, next) => {
+  const start = Date.now();
+  await next();
+  const ms = Date.now() - start;
+  context.response.headers.set('X-Response-Time', `${ms}ms`);
+});
+
+// Send static content
+app.use(async (context) => {
+  await context.send({
+    root: 'build',
+    index: 'index.html'
+  });
+});
+
+app.addEventListener('listen', ({ hostname, port, serverType }) => {
+  console.log(bold('Start listening on ') + yellow(`${hostname}:${port}`));
+  console.log(bold('  using HTTP server: ' + yellow(serverType)));
+});
 
 await app.listen({ port: 8000 });
