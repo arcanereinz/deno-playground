@@ -1,4 +1,34 @@
-import { Router, Context, Application, RouteParams } from './deps.ts';
+import { Router, Context, Application, RouteParams, extname } from './deps.ts';
+
+/** Based on file_server.ts */
+const MEDIA_TYPES: Record<string, string> = {
+  '.md': 'text/markdown',
+  '.html': 'text/html',
+  '.htm': 'text/html',
+  '.json': 'application/json',
+  '.map': 'application/json',
+  '.txt': 'text/plain',
+  '.ts': 'text/typescript',
+  '.tsx': 'text/tsx',
+  '.js': 'application/javascript',
+  '.jsx': 'text/jsx',
+  '.gz': 'application/gzip',
+  '.css': 'text/css',
+  '.wasm': 'application/wasm',
+  '.mjs': 'application/javascript',
+  '.svg': 'image/svg+xml',
+  '.png': 'image/png',
+  '.bmp': 'image/bmp',
+  '.jpg': 'image/jpg',
+  '.webp': 'image/webp',
+  '.woff': 'font/woff',
+  '.woff2': 'font/woff2'
+};
+
+/** Returns the content-type based on the extension of a path. */
+function contentType(path: string): string | undefined {
+  return MEDIA_TYPES[extname(path)];
+}
 
 /**
  * Serve all files from directory (without slash at end) recursively
@@ -8,49 +38,42 @@ import { Router, Context, Application, RouteParams } from './deps.ts';
 async function serveFilesFrom(
   router: Router<RouteParams, Record<string, string>>,
   directory: string,
+  original = directory
 ) {
   for await (const dirEntry of Deno.readDir(directory)) {
     if (dirEntry.isDirectory) {
       // recursively add filepath to route
-      serveFilesFrom(router, directory + '/' + dirEntry.name);
+      serveFilesFrom(router, directory + '/' + dirEntry.name, original);
     } else {
       // add filepath to route
-      let type: string | undefined;
-      const ext = dirEntry.name.split('.').pop();
+      const urlpath =
+        '/' +
+        (directory + '/').replace(original + '/', '') +
+        (dirEntry.name === 'index.html' ? '' : dirEntry.name);
+      router.get(urlpath, async (context: Context) => {
+        const filepath = directory + '/' + dirEntry.name;
 
-      switch (ext) {
-        case 'html':
-          type = 'text/html';
-          break;
-        case 'js':
-          type = 'text/javascript';
-          break;
-        case 'css':
-          type = 'text/css';
-          break;
-        case 'png':
-          type = 'image/png';
-          break;
-        case 'map':
-          type = 'application/json';
-          break;
-      }
-      const body = await Deno.readTextFile(directory + '/' + dirEntry.name);
-      router.get(
-        dirEntry.name === 'index.html'
-          ? '/' // if index.html then root else remove public from path name
-          : '/' + (directory + '/').replace('public/', '') + dirEntry.name,
-        (context: Context) => {
-          context.response.type = type;
-          context.response.body = body;
-        },
-      );
+        const type = contentType(filepath);
+        context.response.type = type;
+
+        // move file open inside of closure to
+        // control lifetime of file handler
+        const file = type?.startsWith('image')
+          ? await Deno.open(filepath) // open image alternatively since binary
+          : await Deno.readTextFile(filepath);
+        context.response.body = file;
+      });
     }
   }
 }
 
 const router = new Router();
-serveFilesFrom(router, 'public');
+serveFilesFrom(router, 'build');
+// const body = await Deno.readTextFile('build/_app/chunks/vendor-836cc791.js');
+// router.get('/_app/chunks/vendor-836cc791.js', (context: Context) => {
+//   context.response.type = 'text/javascript';
+//   context.response.body = body;
+// });
 const app = new Application();
 app.use(router.routes());
 app.use(router.allowedMethods());
