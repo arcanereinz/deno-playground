@@ -1,0 +1,11 @@
+{
+  "scripts": {
+    "__internal__": "snel dev",
+    "dev": "trex run __internal__",
+    "watch": "trex run __internal__ --watch",
+    "start": "snel serve",
+    "build": "snel build",
+    "serve": "deno run --allow-net --allow-read ./serve.ts"
+  },
+  "files": ["./src", "./public/index.html", "./public/global.css"]
+}
